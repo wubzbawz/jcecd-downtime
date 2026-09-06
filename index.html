@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>JCECD Shared Emergency Call Entry</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="JCECD Call Entry">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<style>
+*{box-sizing:border-box}html,body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#e2e8f0;color:#0f172a}
+header{background:#0f172a;color:#fff;padding:12px 16px;border-bottom:4px solid #dc2626;position:sticky;top:0;z-index:20}
+header h1{font-size:19px;margin:0}header .sub{font-size:12px;color:#cbd5e1;margin-top:3px}
+main{max-width:1200px;margin:0 auto;padding:12px}.card{background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:13px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}.c12{grid-column:span 12}.c6{grid-column:span 6}.c4{grid-column:span 4}.c3{grid-column:span 3}
+label{display:block;font-size:12px;font-weight:900;color:#475569;margin:0 0 5px}input,select,textarea{width:100%;padding:10px;border:2px solid #94a3b8;border-radius:8px;font-size:15px;background:#fff}
+textarea{min-height:90px;resize:vertical}button{border:0;border-radius:8px;padding:10px 14px;font-weight:900;font-size:14px;cursor:pointer;background:#0f172a;color:#fff}
+button.secondary{background:#475569}button.good{background:#166534}.tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.tabs button.active{outline:3px solid #38bdf8}
+.pill{display:inline-block;padding:4px 7px;border-radius:999px;font-size:11px;font-weight:900;background:#e2e8f0;margin-right:4px}.law{background:#dbeafe;color:#1d4ed8}.fire{background:#fee2e2;color:#b91c1c}.ems{background:#dcfce7;color:#166534}
+#app,#loginCard{display:none}.muted{color:#64748b;font-size:12px}.status{font-size:12px;font-weight:900}
+.results{max-height:240px;overflow:auto;border:1px solid #cbd5e1;border-radius:8px;margin-top:6px}.addrBtn{display:block;width:100%;text-align:left;background:#fff;color:#0f172a;border-bottom:1px solid #e2e8f0;border-radius:0}
+.callCard{border:2px solid #cbd5e1;border-radius:10px;padding:10px;margin:8px 0;background:#fff}.callCard.pending{border-left:7px solid #dc2626}.callCard.active{border-left:7px solid #16a34a}
+.callHead{display:flex;gap:8px;justify-content:space-between;align-items:flex-start}.callNo{font-size:18px;font-weight:900}.address{font-size:16px;font-weight:800;margin:5px 0}.meta{font-size:12px;color:#475569}
+.narrative{background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:8px;max-height:280px;overflow:auto}.nline{border-bottom:1px solid #e2e8f0;padding:6px 2px;font-size:13px}.ntime{font-family:monospace;font-weight:900}.nauthor{font-weight:900;color:#475569}
+.hidden{display:none!important}.split{display:grid;grid-template-columns:360px 1fr;gap:12px}.sideList{max-height:70vh;overflow:auto}.selectedCall{min-height:300px}
+.checks{display:flex;gap:10px;flex-wrap:wrap}.checks label{display:flex;align-items:center;gap:5px;font-size:14px;color:#0f172a}.checks input{width:auto}
+.critical{background:#fee2e2!important;border:2px solid #dc2626!important}.ackwarn{background:#fef3c7;color:#92400e}.age{font-family:monospace;font-weight:900}.danger{background:#991b1b}.warn{background:#b45309}.banner{padding:9px;border-radius:8px;background:#fef3c7;color:#92400e;font-weight:800;font-size:12px;margin-bottom:10px}
+@media(max-width:800px){.split{grid-template-columns:1fr}.c6,.c4,.c3{grid-column:span 12}.sideList{max-height:none}}
+</style>
+</head>
+<body>
+<header><h1>JCECD SHARED EMERGENCY CALL ENTRY <span style='font-size:11px;color:#94a3b8'>v4</span></h1><div class="sub">Emergency downtime use • Shared Call Processing / Law / Fire-EMS</div></header>
+<main>
+<div id="setupWarning" class="banner hidden"></div>
+<div id="loginCard" class="card">
+<h2 style="margin-top:0">SIGN IN</h2>
+<div class="grid">
+<div class="c6"><label>EMAIL</label><input id="loginEmail" type="email"></div>
+<div class="c6"><label>PASSWORD</label><input id="loginPassword" type="password"></div>
+<div class="c4"><label>WORKSTATION ROLE</label><select id="loginRole"><option>Call Processing</option><option>Law Dispatch</option><option>Fire Dispatch</option><option>Supervisor</option></select></div>
+<div class="c4"><label>OPERATOR NAME / RADIO ID</label><input id="operatorName" placeholder="CP01 / LAW01 / FIRE01"></div>
+<div class="c4" style="display:flex;align-items:end"><button id="loginBtn" style="width:100%">SIGN IN</button></div>
+</div><div id="loginStatus" class="status muted" style="margin-top:8px"></div>
+</div>
+
+<div id="app">
+<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+<div><b id="who"></b><div id="dbStatus" class="status muted">Loading address database...</div></div>
+<button id="logoutBtn" class="secondary">SIGN OUT</button></div></div>
+
+<div id="opsBanner" class="card" style="border-left:7px solid #dc2626"><div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><b>EMERGENCY DOWNTIME CAD ACTIVE</b><span id="opsCounts" class="status">ACTIVE: 0 | UNACKNOWLEDGED: 0 | RECONCILIATION: 0</span></div></div>
+<div class="tabs"><button id="tabNew">NEW CALL</button><button id="tabActive">ACTIVE CALLS</button><button id="tabAll">ALL ACTIVE</button><button id="tabClosed">CLOSED / RECONCILIATION</button></div>
+
+<section id="newView"><div class="card">
+<h2 style="margin-top:0">NEW EMERGENCY CALL</h2>
+<div class="grid">
+<div class="c12"><label>ADDRESS SEARCH</label><input id="addressSearch" placeholder="2132 PINEHURST DR"><div id="addressResults" class="results hidden"></div></div>
+<div class="c6"><label>SELECTED ADDRESS</label><input id="addressSelected" readonly></div>
+<div class="c3"><label>FIRE RESPONSE QUAD</label><input id="fireResponse" readonly></div>
+<div class="c3"><label>JCSO BEAT</label><input id="jcsoBeat" readonly></div>
+<div class="c12"><label>RESPONSE NEEDED</label><div class="checks">
+<label><input id="needLaw" type="checkbox"> LAW</label><label><input id="needFire" type="checkbox"> FIRE</label><label><input id="needEms" type="checkbox"> EMS</label></div></div>
+<div id="lawTypeWrap" class="c4 hidden"><label>LAW CALL TYPE</label><select id="lawType"></select></div>
+<div id="fireTypeWrap" class="c4 hidden"><label>FIRE CALL TYPE</label><select id="fireType"></select></div>
+<div id="emsTypeWrap" class="c4 hidden"><label>EMS CALL TYPE</label><select id="emsType"></select></div>
+<div class="c6"><label>CALLER NAME</label><input id="callerName"></div>
+<div class="c6"><label>CALLBACK NUMBER</label><input id="callbackNumber"></div>
+<div class="c12"><label>INITIAL NARRATIVE - ENTER ONE LINE AT A TIME</label>
+<input id="initialNarrativeLine" placeholder="Type a line and press Enter...">
+<div id="initialNarrativePreview" class="narrative" style="margin-top:7px;min-height:90px"><div class="muted">No narrative entered yet.</div></div>
+<div class="muted" style="margin-top:5px">Each line is timestamped when entered. Use REMOVE before sending if a line needs to be corrected.</div>
+</div>
+<div class="c6"><button id="sendCallBtn" class="good" style="width:100%">SEND TO DISPATCH</button></div>
+<div class="c6"><button id="clearNewBtn" class="secondary" style="width:100%">CLEAR ENTRY</button></div>
+</div><div id="newStatus" class="status muted" style="margin-top:8px"></div>
+</div></section>
+
+<section id="activeView" class="hidden"><div class="split">
+<div class="card sideList"><h3 style="margin-top:0">ACTIVE / PENDING</h3><div id="callList"></div></div>
+<div id="selectedCallPanel" class="card selectedCall"><div class="muted">Select a call.</div></div>
+</div></section>
+<section id="allView" class="hidden"><div class="card"><h3 style="margin-top:0">ALL ACTIVE CALLS / FLOOR VIEW</h3><div id="allCallList"></div></div></section>
+<section id="closedView" class="hidden"><div class="card">
+<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+<h3 style="margin:0">CLOSED / RECONCILIATION QUEUE</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="exportClosedBtn" class="good">EXPORT CLOSED / RECONCILIATION CSV</button><button id="resolveClosedBtn" class="danger">REMOVE RECONCILED CALLS</button></div>
+</div>
+<div class="muted" style="margin:7px 0 10px">Closed calls remain here until reconciled to Tyler/New World. Enter the New World incident number, mark RECONCILED, export, then remove reconciled calls.</div>
+<div id="closedList"></div></div></section>
+</div>
+</main>
+
+<script>
+let sb=null,session=null,ROLE='',OPERATOR='',ADDRESS_DATA=[],CALLTYPES={},calls=[],selectedCallId=null,realtimeChannel=null,INITIAL_LINES=[];
+const $=id=>document.getElementById(id);
+function norm(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function fmtTime(iso){return new Date(iso).toLocaleTimeString([],{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+function fmtDateTime(iso){return new Date(iso).toLocaleString([],{hour12:false});}
+function configOK(){const c=window.JCECD_CONFIG||{};return c.SUPABASE_URL&&c.SUPABASE_KEY&&!c.SUPABASE_URL.includes('PASTE_')&&!c.SUPABASE_KEY.includes('PASTE_');}
+
+async function boot(){
+ try{
+  const [dt,ct]=await Promise.all([fetch('data.tsv').then(r=>r.text()),fetch('calltypes.json').then(r=>r.json())]);
+  ADDRESS_DATA=dt.split('\n').filter(Boolean).map(line=>line.split('\t'));CALLTYPES=ct;
+ }catch(e){console.error(e);}
+ if(!configOK()){
+  $('setupWarning').classList.remove('hidden');$('setupWarning').textContent='SETUP REQUIRED: edit config.js with your Supabase Project URL and publishable key.';
+  $('loginCard').style.display='block';$('loginBtn').disabled=true;return;
+ }
+ sb=window.supabase.createClient(window.JCECD_CONFIG.SUPABASE_URL,window.JCECD_CONFIG.SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+ const {data}=await sb.auth.getSession();session=data.session;
+ if(session) showApp(); else $('loginCard').style.display='block';
+}
+$('loginBtn').onclick=async()=>{
+ ROLE=$('loginRole').value;OPERATOR=$('operatorName').value.trim().toUpperCase();
+ if(!OPERATOR){$('loginStatus').textContent='Enter operator name / radio ID.';return;}
+ localStorage.setItem('jcecd_role',ROLE);localStorage.setItem('jcecd_operator',OPERATOR);
+ const {data,error}=await sb.auth.signInWithPassword({email:$('loginEmail').value.trim(),password:$('loginPassword').value});
+ if(error){$('loginStatus').textContent=error.message;return;}session=data.session;showApp();
+};
+$('logoutBtn').onclick=()=>sb.auth.signOut().then(()=>location.reload());
+
+async function showApp(){
+ ROLE=localStorage.getItem('jcecd_role')||'Call Processing';OPERATOR=localStorage.getItem('jcecd_operator')||session.user.email;
+ $('loginCard').style.display='none';$('app').style.display='block';$('who').textContent=ROLE+' • '+OPERATOR;
+ $('dbStatus').textContent='ADDRESS DB READY - '+ADDRESS_DATA.length.toLocaleString()+' addresses';
+ setupCallTypes();await refreshAll();startRealtime();showTab(ROLE==='Call Processing'?'new':'active');
+}
+function setupCallTypes(){
+ for(const [id,key] of [['lawType','Law'],['fireType','Fire'],['emsType','EMS']])$(id).innerHTML=(CALLTYPES[key]||[]).map(x=>`<option>${esc(x)}</option>`).join('');
+}
+for(const id of ['needLaw','needFire','needEms'])$(id).onchange=()=>{
+ $('lawTypeWrap').classList.toggle('hidden',!$('needLaw').checked);
+ $('fireTypeWrap').classList.toggle('hidden',!$('needFire').checked);
+ $('emsTypeWrap').classList.toggle('hidden',!$('needEms').checked);
+};
+let addrTimer=null;$('addressSearch').oninput=()=>{clearTimeout(addrTimer);addrTimer=setTimeout(searchAddress,180);};
+function searchAddress(){
+ const q=norm($('addressSearch').value),box=$('addressResults');if(q.length<3){box.classList.add('hidden');return;}
+ const toks=q.split(' '),found=[];for(let i=0;i<ADDRESS_DATA.length&&found.length<30;i++){const a=ADDRESS_DATA[i][0]||'';if(toks.every(t=>a.includes(t)))found.push(ADDRESS_DATA[i]);}
+ box.innerHTML=found.length?found.map((r,i)=>`<button class="addrBtn" data-i="${i}"><b>${esc(r[0])}</b><br><span class="muted">FIRE: ${esc(r[1]||'VERIFY')} • JCSO BEAT: ${esc(r[2]||'VERIFY')}</span></button>`).join(''):'<div style="padding:10px">No saved address match.</div>';
+ box.classList.remove('hidden');[...box.querySelectorAll('.addrBtn')].forEach((b,i)=>b.onclick=()=>{const r=found[i];$('addressSelected').value=r[0]||'';$('fireResponse').value=r[1]||'VERIFY';$('jcsoBeat').value=r[2]||'VERIFY';$('addressSearch').value=r[0]||'';box.classList.add('hidden');});
+}
+function clearNew(){
+ for(const id of ['addressSearch','addressSelected','fireResponse','jcsoBeat','callerName','callbackNumber','initialNarrativeLine'])$(id).value='';
+ INITIAL_LINES=[];renderInitialLines();
+ for(const id of ['needLaw','needFire','needEms'])$(id).checked=false;
+ for(const id of ['lawTypeWrap','fireTypeWrap','emsTypeWrap'])$(id).classList.add('hidden');
+ $('addressResults').classList.add('hidden');
+}
+function renderInitialLines(){
+ const box=$('initialNarrativePreview');
+ if(!INITIAL_LINES.length){box.innerHTML='<div class="muted">No narrative entered yet.</div>';return;}
+ box.innerHTML=INITIAL_LINES.map((n,i)=>`<div class="nline"><span class="ntime">${fmtTime(n.created_at)}</span> <span class="nauthor">${esc(OPERATOR||'CP')}</span> ${esc(n.body)} <button type="button" class="secondary" data-remove-line="${i}" style="float:right;padding:3px 7px;font-size:10px">REMOVE</button></div>`).join('');
+ [...box.querySelectorAll('[data-remove-line]')].forEach(b=>b.onclick=()=>{INITIAL_LINES.splice(Number(b.dataset.removeLine),1);renderInitialLines();});
+}
+$('initialNarrativeLine').onkeydown=e=>{
+ if(e.key==='Enter'){
+  e.preventDefault();
+  const body=$('initialNarrativeLine').value.trim();
+  if(!body)return;
+  INITIAL_LINES.push({body,created_at:new Date().toISOString()});
+  $('initialNarrativeLine').value='';
+  renderInitialLines();
+ }
+};
+$('clearNewBtn').onclick=clearNew;
+$('sendCallBtn').onclick=async()=>{
+ if(!$('addressSelected').value){$('newStatus').textContent='Select a verified address first.';return;}
+ if(!$('needLaw').checked&&!$('needFire').checked&&!$('needEms').checked){$('newStatus').textContent='Select at least one response.';return;}
+ if(!INITIAL_LINES.length){$('newStatus').textContent='Enter at least one narrative line and press Enter.';return;}
+ const dup=calls.find(c=>c.status!=='CLOSED'&&(norm(c.address)===norm($('addressSelected').value)||($('callbackNumber').value.trim()&&c.callback_number===$('callbackNumber').value.trim())));if(dup&&!confirm('ACTIVE CALL FOUND: '+dup.call_number+' at '+dup.address+'. Create a separate new call anyway?')){showTab('active');await openCall(dup.id);return;}
+ $('sendCallBtn').disabled=true;
+ const payload={address:$('addressSelected').value,fire_response:$('fireResponse').value,jcso_beat:$('jcsoBeat').value,
+ law:$('needLaw').checked,fire:$('needFire').checked,ems:$('needEms').checked,
+ law_call_type:$('needLaw').checked?$('lawType').value:null,fire_call_type:$('needFire').checked?$('fireType').value:null,ems_call_type:$('needEms').checked?$('emsType').value:null,
+ caller_name:$('callerName').value.trim(),callback_number:$('callbackNumber').value.trim(),
+ law_status:$('needLaw').checked?'READY FOR DISPATCH':null,fire_status:$('needFire').checked?'READY FOR DISPATCH':null,ems_status:$('needEms').checked?'READY FOR DISPATCH':null,created_by:session.user.id,created_by_name:OPERATOR,created_by_role:ROLE};
+ const {data:created,error}=await sb.from('calls').insert(payload).select().single();
+ if(error){$('newStatus').textContent='SEND FAILED: '+error.message;$('sendCallBtn').disabled=false;return;}
+ const initialRows=INITIAL_LINES.map(n=>({call_id:created.id,body:n.body,created_at:n.created_at,author_id:session.user.id,author_name:OPERATOR,author_role:ROLE}));
+ const {error:nerr}=await sb.from('narratives').insert(initialRows);
+ if(nerr){$('newStatus').textContent='CALL CREATED BUT NARRATIVE FAILED: '+nerr.message;$('sendCallBtn').disabled=false;return;}
+ clearNew();$('newStatus').textContent=created.call_number+' SENT TO DISPATCH.';$('sendCallBtn').disabled=false;await refreshAll();showTab('active');
+};
+function visibleForRole(c){if(ROLE==='Law Dispatch')return c.law;if(ROLE==='Fire Dispatch')return c.fire||c.ems;return true;}
+async function refreshAll(){
+ const {data,error}=await sb.from('calls').select('*').order('created_at',{ascending:false}).limit(300);if(error){console.error(error);return;}calls=data||[];renderLists();if(selectedCallId)await openCall(selectedCallId,false);
+}
+function disciplines(c){let a=[];if(c.law)a.push('<span class="pill law">LAW</span>');if(c.fire)a.push('<span class="pill fire">FIRE</span>');if(c.ems)a.push('<span class="pill ems">EMS</span>');return a.join('');}
+function ageText(iso){const sec=Math.max(0,Math.floor((Date.now()-new Date(iso))/1000));const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),ss=sec%60;return (h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0');}
+function discStatus(c,d){return c[d+'_status']||(c[d]?'READY FOR DISPATCH':'');}
+function unacked(c){return (c.law&&discStatus(c,'law')==='READY FOR DISPATCH')||(c.fire&&discStatus(c,'fire')==='READY FOR DISPATCH')||(c.ems&&discStatus(c,'ems')==='READY FOR DISPATCH');}
+function criticalForRole(c){if(ROLE==='Law Dispatch')return c.critical_law;if(ROLE==='Fire Dispatch')return c.critical_fire||c.critical_ems;if(ROLE==='Supervisor')return c.critical_law||c.critical_fire||c.critical_ems;return c.critical_law||c.critical_fire||c.critical_ems;}
+function statusSummary(c){let x=[];if(c.law)x.push('LAW: '+discStatus(c,'law'));if(c.fire)x.push('FIRE: '+discStatus(c,'fire'));if(c.ems)x.push('EMS: '+discStatus(c,'ems'));return x.join(' | ');}
+function card(c){const warn=unacked(c);const crit=criticalForRole(c);return `<div class="callCard ${crit?'critical':warn?'ackwarn':(c.status==='PENDING'?'pending':'active')}"><div class="callHead"><div><div class="callNo">${esc(c.call_number)}</div>${disciplines(c)}</div><span class="age" data-age="${esc(c.created_at)}">${ageText(c.created_at)}</span></div><div class="address">${esc(c.address)}</div><div class="meta"><b>${esc(statusSummary(c))}</b><br>Received ${fmtDateTime(c.created_at)} by ${esc(c.created_by_name)}${warn?'<br><b>⚠ WAITING FOR DISPATCH ACKNOWLEDGMENT</b>':''}${crit?'<br><b>⚠ CRITICAL UPDATE REQUIRES ACKNOWLEDGMENT</b>':''}</div><div style="margin-top:8px"><button data-call="${c.id}">OPEN</button></div></div>`;}
+function renderLists(){
+ const a=calls.filter(c=>c.status!=='CLOSED'&&visibleForRole(c));$('callList').innerHTML=a.length?a.map(card).join(''):'<div class="muted">No active calls.</div>';
+ [...$('callList').querySelectorAll('[data-call]')].forEach(b=>b.onclick=()=>openCall(b.dataset.call));
+ const all=calls.filter(c=>c.status!=='CLOSED');$('allCallList').innerHTML=all.length?all.map(card).join(''):'<div class="muted">No active calls.</div>';
+ [...$('allCallList').querySelectorAll('[data-call]')].forEach(b=>b.onclick=()=>{showTab('active');openCall(b.dataset.call);});
+ const cl=calls.filter(c=>c.status==='CLOSED'&&visibleForRole(c)).slice(0,200);$('closedList').innerHTML=cl.length?cl.map(c=>closedCard(c)).join(''):'<div class="muted">No closed calls.</div>';
+ [...$('closedList').querySelectorAll('[data-reopen]')].forEach(b=>b.onclick=()=>reopenClosedCall(b.dataset.reopen));
+ [...$('closedList').querySelectorAll('[data-reconcile]')].forEach(b=>b.onclick=()=>reconcileCall(b.dataset.reconcile));
+ const active=calls.filter(c=>c.status!=='CLOSED').length, ua=calls.filter(c=>c.status!=='CLOSED'&&unacked(c)).length, rq=calls.filter(c=>c.status==='CLOSED'&&c.reconciliation_status!=='RECONCILED').length;
+ $('opsCounts').textContent=`ACTIVE: ${active} | UNACKNOWLEDGED: ${ua} | RECONCILIATION: ${rq}`;
+}
+function closedCard(c){return `<div class="callCard"><div class="callHead"><div><div class="callNo">${esc(c.call_number)}</div>${disciplines(c)}</div><span class="pill">${esc(c.reconciliation_status||'PENDING')}</span></div><div class="address">${esc(c.address)}</div><div class="meta">Closed ${c.closed_at?fmtDateTime(c.closed_at):''} | New World: <b>${esc(c.new_world_incident||'NOT ENTERED')}</b></div><div style="display:flex;gap:7px;margin-top:8px;flex-wrap:wrap"><button data-reopen="${c.id}">REOPEN</button>${c.reconciliation_status!=='RECONCILED'?`<button class="good" data-reconcile="${c.id}">RECONCILE</button>`:''}</div></div>`;}
+async function reconcileCall(id){const nw=prompt('Enter the Tyler/New World incident number for this downtime call:');if(!nw||!nw.trim())return;const patch={reconciliation_status:'RECONCILED',new_world_incident:nw.trim().toUpperCase(),reconciled_at:new Date().toISOString(),reconciled_by_name:OPERATOR};const {error}=await sb.from('calls').update(patch).eq('id',id);if(error){alert('RECONCILIATION FAILED: '+error.message);return;}await sb.from('narratives').insert({call_id:id,body:'RECONCILED TO NEW WORLD INCIDENT '+patch.new_world_incident,author_id:session.user.id,author_name:OPERATOR,author_role:ROLE});await refreshAll();}
+async function openCall(id,scroll=true){
+ selectedCallId=id;const c=calls.find(x=>x.id===id);if(!c)return;
+ const {data:narr}=await sb.from('narratives').select('*').eq('call_id',id).order('created_at',{ascending:true});
+ const canAckLaw=c.law&&discStatus(c,'law')==='READY FOR DISPATCH'&&(ROLE==='Law Dispatch'||ROLE==='Supervisor');
+ const canAckFire=c.fire&&discStatus(c,'fire')==='READY FOR DISPATCH'&&(ROLE==='Fire Dispatch'||ROLE==='Supervisor');
+ const canAckEms=c.ems&&discStatus(c,'ems')==='READY FOR DISPATCH'&&(ROLE==='Fire Dispatch'||ROLE==='Supervisor');
+ const critAck=(ROLE==='Law Dispatch'&&c.critical_law)||(ROLE==='Fire Dispatch'&&(c.critical_fire||c.critical_ems))||(ROLE==='Supervisor'&&(c.critical_law||c.critical_fire||c.critical_ems));
+ $('selectedCallPanel').innerHTML=`<div class="callHead"><div><div class="callNo">${esc(c.call_number)}</div>${disciplines(c)}</div><span class="age">AGE ${ageText(c.created_at)}</span></div>
+ <div class="address">${esc(c.address)}</div><div class="grid" style="margin-top:8px">
+ <div class="c4"><label>FIRE RESPONSE QUAD</label><b>${esc(c.fire_response||'VERIFY')}</b></div><div class="c4"><label>JCSO BEAT</label><b>${esc(c.jcso_beat||'VERIFY')}</b></div><div class="c4"><label>CALLER / CALLBACK</label><b>${esc(c.caller_name||'')}</b><br>${esc(c.callback_number||'')}</div>
+ <div class="c12"><label>DISCIPLINE STATUS</label><b>${esc(statusSummary(c))}</b></div>
+ ${(canAckLaw||canAckFire||canAckEms)?`<div class="c12"><button id="ackCallBtn" class="warn">ACKNOWLEDGE ${[canAckLaw?'LAW':'',canAckFire?'FIRE':'',canAckEms?'EMS':''].filter(Boolean).join(' + ')}</button></div>`:''}
+ ${critAck?'<div class="c12"><button id="ackCriticalBtn" class="danger">ACKNOWLEDGE CRITICAL UPDATE</button></div>':''}
+ <div class="c12"><label>CALL TYPE(S)</label>${c.law?'<b>LAW:</b> '+esc(c.law_call_type||'')+' &nbsp; ':''}${c.fire?'<b>FIRE:</b> '+esc(c.fire_call_type||'')+' &nbsp; ':''}${c.ems?'<b>EMS:</b> '+esc(c.ems_call_type||''):''}</div>
+ <div class="c12"><label>ADD RESPONSE / DISCIPLINE</label><div class="checks">${!c.law?'<label><input id="addLawDisc" type="checkbox"> ADD LAW</label>':''}${!c.fire?'<label><input id="addFireDisc" type="checkbox"> ADD FIRE</label>':''}${!c.ems?'<label><input id="addEmsDisc" type="checkbox"> ADD EMS</label>':''}</div></div>
+ ${!c.law?'<div id="addLawTypeWrap" class="c4 hidden"><label>LAW CALL TYPE</label><select id="addLawType"></select></div>':''}${!c.fire?'<div id="addFireTypeWrap" class="c4 hidden"><label>FIRE CALL TYPE</label><select id="addFireType"></select></div>':''}${!c.ems?'<div id="addEmsTypeWrap" class="c4 hidden"><label>EMS CALL TYPE</label><select id="addEmsType"></select></div>':''}${(!c.law||!c.fire||!c.ems)?'<div class="c12"><button id="activateDisciplineBtn" class="warn">ACTIVATE SELECTED RESPONSE</button></div>':''}
+ <div class="c12"><label>UPDATE DISCIPLINE STATUS</label><div class="grid">${c.law?'<div class="c4"><label>LAW</label><select id="lawStatusChange">'+['READY FOR DISPATCH','ACKNOWLEDGED','DISPATCHED','ACTIVE','HOLDING','CLOSED'].map(x=>`<option ${x===discStatus(c,'law')?'selected':''}>${x}</option>`).join('')+'</select></div>':''}${c.fire?'<div class="c4"><label>FIRE</label><select id="fireStatusChange">'+['READY FOR DISPATCH','ACKNOWLEDGED','DISPATCHED','ACTIVE','HOLDING','CLOSED'].map(x=>`<option ${x===discStatus(c,'fire')?'selected':''}>${x}</option>`).join('')+'</select></div>':''}${c.ems?'<div class="c4"><label>EMS</label><select id="emsStatusChange">'+['READY FOR DISPATCH','ACKNOWLEDGED','DISPATCHED','ACTIVE','HOLDING','CLOSED'].map(x=>`<option ${x===discStatus(c,'ems')?'selected':''}>${x}</option>`).join('')+'</select></div>':''}</div></div>
+ <div class="c12"><button id="saveStatusBtn" class="secondary">SAVE DISCIPLINE STATUS</button></div>
+ <div class="c12"><label>NARRATIVE</label><div class="narrative">${(narr||[]).map(n=>`<div class="nline ${n.critical?'critical':''}"><span class="ntime">${fmtTime(n.created_at)}</span> <span class="nauthor">${esc(n.author_name)} [${esc(n.author_role)}]</span> ${n.critical?'<b>CRITICAL: </b>':''}${esc(n.body)}</div>`).join('')}</div></div>
+ <div class="c12"><label>ADD NARRATIVE UPDATE</label><textarea id="updateText" style="min-height:140px" placeholder="Type update. Press Enter to post; Shift+Enter for a new line before posting."></textarea><label style="margin-top:7px"><input id="criticalUpdate" type="checkbox" style="width:auto"> CRITICAL UPDATE - REQUIRE RECEIVING DISCIPLINE ACKNOWLEDGMENT</label></div>
+ <div class="c12"><button id="addUpdateBtn" class="good" style="width:100%">ADD NARRATIVE LINE</button></div>
+ </div><div id="callActionStatus" class="status muted" style="margin-top:8px"></div>`;
+ $('addUpdateBtn').onclick=addUpdate;$('updateText').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();addUpdate();}};$('saveStatusBtn').onclick=updateStatus;
+ if($('ackCallBtn'))$('ackCallBtn').onclick=acknowledgeCall;if($('ackCriticalBtn'))$('ackCriticalBtn').onclick=acknowledgeCritical;
+ for(const [cb,wrap,sel,key] of [['addLawDisc','addLawTypeWrap','addLawType','Law'],['addFireDisc','addFireTypeWrap','addFireType','Fire'],['addEmsDisc','addEmsTypeWrap','addEmsType','EMS']])if($(cb)){ $(sel).innerHTML=(CALLTYPES[key]||[]).map(x=>`<option>${esc(x)}</option>`).join('');$(cb).onchange=()=>$(wrap).classList.toggle('hidden',!$(cb).checked);}
+ if($('activateDisciplineBtn'))$('activateDisciplineBtn').onclick=activateDiscipline;if(scroll&&window.innerWidth<800)$('selectedCallPanel').scrollIntoView({behavior:'smooth'});
+}
+async function acknowledgeCall(){const c=calls.find(x=>x.id===selectedCallId),patch={},a=[];if((ROLE==='Law Dispatch'||ROLE==='Supervisor')&&c.law&&discStatus(c,'law')==='READY FOR DISPATCH'){patch.law_status='ACKNOWLEDGED';patch.law_ack_at=new Date().toISOString();patch.law_ack_by=OPERATOR;a.push('LAW');}if((ROLE==='Fire Dispatch'||ROLE==='Supervisor')&&c.fire&&discStatus(c,'fire')==='READY FOR DISPATCH'){patch.fire_status='ACKNOWLEDGED';patch.fire_ack_at=new Date().toISOString();patch.fire_ack_by=OPERATOR;a.push('FIRE');}if((ROLE==='Fire Dispatch'||ROLE==='Supervisor')&&c.ems&&discStatus(c,'ems')==='READY FOR DISPATCH'){patch.ems_status='ACKNOWLEDGED';patch.ems_ack_at=new Date().toISOString();patch.ems_ack_by=OPERATOR;a.push('EMS');}if(!a.length)return;const {error}=await sb.from('calls').update(patch).eq('id',selectedCallId);if(error){alert(error.message);return;}await sb.from('narratives').insert({call_id:selectedCallId,body:'DISPATCH ACKNOWLEDGED: '+a.join(' + '),author_id:session.user.id,author_name:OPERATOR,author_role:ROLE});await refreshAll();}
+async function acknowledgeCritical(){const c=calls.find(x=>x.id===selectedCallId),patch={},a=[];if((ROLE==='Law Dispatch'||ROLE==='Supervisor')&&c.critical_law){patch.critical_law=false;a.push('LAW');}if((ROLE==='Fire Dispatch'||ROLE==='Supervisor')&&c.critical_fire){patch.critical_fire=false;a.push('FIRE');}if((ROLE==='Fire Dispatch'||ROLE==='Supervisor')&&c.critical_ems){patch.critical_ems=false;a.push('EMS');}const {error}=await sb.from('calls').update(patch).eq('id',selectedCallId);if(error){alert(error.message);return;}await sb.from('narratives').insert({call_id:selectedCallId,body:'CRITICAL UPDATE ACKNOWLEDGED: '+a.join(' + '),author_id:session.user.id,author_name:OPERATOR,author_role:ROLE});await refreshAll();}
+async function activateDiscipline(){
+ const c=calls.find(x=>x.id===selectedCallId);if(!c)return;
+ const patch={};const added=[];
+ if($('addLawDisc')&&$('addLawDisc').checked){patch.law=true;patch.law_call_type=$('addLawType').value;patch.law_status='READY FOR DISPATCH';added.push('LAW');}
+ if($('addFireDisc')&&$('addFireDisc').checked){patch.fire=true;patch.fire_call_type=$('addFireType').value;patch.fire_status='READY FOR DISPATCH';added.push('FIRE');}
+ if($('addEmsDisc')&&$('addEmsDisc').checked){patch.ems=true;patch.ems_call_type=$('addEmsType').value;patch.ems_status='READY FOR DISPATCH';added.push('EMS');}
+ if(!added.length){$('callActionStatus').textContent='Select a response to activate.';return;}
+ const {error}=await sb.from('calls').update(patch).eq('id',selectedCallId);
+ if(error){$('callActionStatus').textContent='RESPONSE ACTIVATION FAILED: '+error.message;return;}
+ await sb.from('narratives').insert({
+   call_id:selectedCallId,
+   body:'ADDED RESPONSE: '+added.join(' + '),
+   author_id:session.user.id,
+   author_name:OPERATOR,
+   author_role:ROLE
+ });
+ await refreshAll();
+ await openCall(selectedCallId,false);
+}
+
+async function addUpdate(){
+ const body=$('updateText').value.trim();if(!body)return;$('addUpdateBtn').disabled=true;
+ const critical=$('criticalUpdate')&&$('criticalUpdate').checked;const {error}=await sb.from('narratives').insert({call_id:selectedCallId,body,critical,author_id:session.user.id,author_name:OPERATOR,author_role:ROLE});if(!error&&critical){const c=calls.find(x=>x.id===selectedCallId),cp={};if(c.law)cp.critical_law=true;if(c.fire)cp.critical_fire=true;if(c.ems)cp.critical_ems=true;await sb.from('calls').update(cp).eq('id',selectedCallId);}$('addUpdateBtn').disabled=false;
+ if(error){$('callActionStatus').textContent='UPDATE FAILED: '+error.message;return;}$('updateText').value='';await openCall(selectedCallId,false);
+}
+async function updateStatus(){const c=calls.find(x=>x.id===selectedCallId),patch={},changes=[];for(const d of ['law','fire','ems']){const el=$(d+'StatusChange');if(el&&el.value!==discStatus(c,d)){patch[d+'_status']=el.value;changes.push(d.toUpperCase()+': '+el.value);}}if(!changes.length){$('callActionStatus').textContent='No status changes.';return;}const resulting={law:patch.law_status||discStatus(c,'law'),fire:patch.fire_status||discStatus(c,'fire'),ems:patch.ems_status||discStatus(c,'ems')};const needed=[c.law?resulting.law:null,c.fire?resulting.fire:null,c.ems?resulting.ems:null].filter(Boolean);if(needed.length&&needed.every(x=>x==='CLOSED')){patch.status='CLOSED';patch.closed_at=new Date().toISOString();patch.closed_by_name=OPERATOR;patch.reconciliation_status='PENDING';}else patch.status='ACTIVE';const {error}=await sb.from('calls').update(patch).eq('id',selectedCallId);if(error){$('callActionStatus').textContent='STATUS FAILED: '+error.message;return;}await sb.from('narratives').insert({call_id:selectedCallId,body:'STATUS CHANGED - '+changes.join(' | '),author_id:session.user.id,author_name:OPERATOR,author_role:ROLE});await refreshAll();}
+
+async function reopenClosedCall(id){
+ const c=calls.find(x=>x.id===id);if(!c)return;
+ const {error}=await sb.from('calls').update({status:'ACTIVE',reconciliation_status:'PENDING',new_world_incident:null,reconciled_at:null,reconciled_by_name:null,closed_at:null,closed_by_name:null,law_status:c.law?'ACTIVE':c.law_status,fire_status:c.fire?'ACTIVE':c.fire_status,ems_status:c.ems?'ACTIVE':c.ems_status}).eq('id',id);
+ if(error){alert('REOPEN FAILED: '+error.message);return;}
+ await sb.from('narratives').insert({call_id:id,body:'CALL REOPENED FROM CLOSED',author_id:session.user.id,author_name:OPERATOR,author_role:ROLE});
+ await refreshAll();showTab('active');await openCall(id);
+}
+function csvCell(v){return '"'+String(v??'').replace(/"/g,'""')+'"';}
+async function exportClosedCallsCsv(){
+ const btn=$('exportClosedBtn');btn.disabled=true;btn.textContent='BUILDING CSV...';
+ try{
+  const {data:closed,error}=await sb.from('calls').select('*').eq('status','CLOSED').order('created_at',{ascending:true});if(error)throw error;
+  if(!closed||!closed.length){alert('There are no closed calls to export.');return;}
+  const ids=closed.map(c=>c.id);
+  const {data:narr,error:nerr}=await sb.from('narratives').select('*').in('call_id',ids).order('created_at',{ascending:true});if(nerr)throw nerr;
+  const byCall={};for(const n of (narr||[]))(byCall[n.call_id]??=[]).push(n);
+  const headers=['Call Number','Created Date/Time','Closed Date/Time','Address','Fire Response Quad','JCSO Beat','Law','Fire','EMS','Law Call Type','Fire Call Type','EMS Call Type','Caller Name','Callback Number','Created By','Created Role','Closed By','Reconciliation Status','New World Incident','Reconciled By','Narrative Time','Narrative Author','Narrative Role','Narrative Line'];
+  const rows=[headers.map(csvCell).join(',')];
+  for(const c of closed){
+    const nl=byCall[c.id]||[];
+    if(!nl.length) nl.push({created_at:'',author_name:'',author_role:'',body:''});
+    for(const n of nl){
+      rows.push([c.call_number,fmtDateTime(c.created_at),c.closed_at?fmtDateTime(c.closed_at):'',c.address,c.fire_response,c.jcso_beat,c.law?'YES':'NO',c.fire?'YES':'NO',c.ems?'YES':'NO',c.law_call_type,c.fire_call_type,c.ems_call_type,c.caller_name,c.callback_number,c.created_by_name,c.created_by_role,c.closed_by_name,c.reconciliation_status,c.new_world_incident,c.reconciled_by_name,n.created_at?fmtDateTime(n.created_at):'',n.author_name,n.author_role,n.body].map(csvCell).join(','));
+    }
+  }
+  const blob=new Blob(['\ufeff'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a'),d=new Date();
+  const stamp=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'_'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0');
+  a.href=url;a.download='JCECD_Downtime_Closed_Calls_'+stamp+'.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(e){alert('CSV EXPORT FAILED: '+(e.message||e));}
+ finally{btn.disabled=false;btn.textContent='EXPORT CLOSED / RECONCILIATION CSV';}
+}
+
+$('exportClosedBtn').onclick=exportClosedCallsCsv;
+async function resolveClosedCalls(){
+ const closed=calls.filter(c=>c.status==='CLOSED'&&c.reconciliation_status==='RECONCILED'&&visibleForRole(c));
+ if(!closed.length){alert('There are no RECONCILED calls to remove.');return;}
+ const confirmText='This permanently removes all RECONCILED calls visible to this role. Export the reconciliation CSV first. Continue?';
+ if(!confirm(confirmText))return;
+ const ids=closed.map(c=>c.id);
+ const {error}=await sb.from('calls').delete().in('id',ids);
+ if(error){alert('RESOLVE FAILED: '+error.message);return;}
+ selectedCallId=null;$('selectedCallPanel').innerHTML='<div class="muted">Select a call.</div>';
+ await refreshAll();
+ alert('Reconciled calls removed.');
+}
+$('resolveClosedBtn').onclick=resolveClosedCalls;
+
+
+function startRealtime(){
+ realtimeChannel=sb.channel('jcecd-live').on('postgres_changes',{event:'*',schema:'public',table:'calls'},()=>refreshAll()).on('postgres_changes',{event:'*',schema:'public',table:'narratives'},()=>refreshAll()).subscribe();
+}
+function showTab(which){
+ for(const [k,id] of Object.entries({new:'newView',active:'activeView',all:'allView',closed:'closedView'}))$(id).classList.toggle('hidden',k!==which);
+ for(const [k,id] of [['new','tabNew'],['active','tabActive'],['all','tabAll'],['closed','tabClosed']])$(id).classList.toggle('active',k===which);
+ if(which!=='new')refreshAll();
+}
+$('tabNew').onclick=()=>showTab('new');$('tabActive').onclick=()=>showTab('active');$('tabAll').onclick=()=>showTab('all');$('tabClosed').onclick=()=>showTab('closed');
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(console.error));
+setInterval(()=>{document.querySelectorAll('[data-age]').forEach(el=>el.textContent=ageText(el.dataset.age));},1000);
+boot();
+</script>
+</body>
+</html>
